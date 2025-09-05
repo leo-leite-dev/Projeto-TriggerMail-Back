@@ -1,0 +1,6 @@
+@TriggerMail.Service_HostAddress = http://localhost:5136
+
+GET {{TriggerMail.Service_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{FE57CE33-7875-43B5-931D-4CA734CC5470}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TriggerMail.Service", "src\TriggerMail.Service\TriggerMail.Service.csproj", "{FAC12EF1-4EF4-4E62-ABEB-DF474D24B9A1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TriggerMail.Core", "src\TriggerMail.Core\TriggerMail.Core.csproj", "{A003ED8D-BF5F-442F-9D1F-AADC3BAF9CE6}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FAC12EF1-4EF4-4E62-ABEB-DF474D24B9A1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FAC12EF1-4EF4-4E62-ABEB-DF474D24B9A1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FAC12EF1-4EF4-4E62-ABEB-DF474D24B9A1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FAC12EF1-4EF4-4E62-ABEB-DF474D24B9A1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A003ED8D-BF5F-442F-9D1F-AADC3BAF9CE6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A003ED8D-BF5F-442F-9D1F-AADC3BAF9CE6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A003ED8D-BF5F-442F-9D1F-AADC3BAF9CE6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A003ED8D-BF5F-442F-9D1F-AADC3BAF9CE6}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{FAC12EF1-4EF4-4E62-ABEB-DF474D24B9A1} = {FE57CE33-7875-43B5-931D-4CA734CC5470}
+		{A003ED8D-BF5F-442F-9D1F-AADC3BAF9CE6} = {FE57CE33-7875-43B5-931D-4CA734CC5470}
+	EndGlobalSection
+EndGlobal

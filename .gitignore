@@ -1,0 +1,44 @@
+# Build
+bin/
+obj/
+out/
+artifacts/
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# Rider / JetBrains
+.idea/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+
+# Test results
+TestResult.xml
+*.trx
+*.coverage
+*.coveragexml
+
+# AppSettings de ambiente
+appsettings.Development.json
+appsettings.Local.json
+
+# Publish
+*.pubxml
+*.publishsettings
