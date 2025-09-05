@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using TriggerMail.Core.Application.Ports.Persistence;
 using TriggerMail.Core.Domain.Entities;
 
-namespace TriggerMail.Service.Infra.Persistence;
+namespace TriggerMail.Service.Infra.Persistence.Repositories;
 
 public sealed class InMemoryTemplateRepository : ITemplateRepository
 {

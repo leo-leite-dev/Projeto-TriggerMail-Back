@@ -1,33 +1,35 @@
 using Microsoft.AspNetCore.Mvc;
-using System.Text;
-using TriggerMail.Core.Application.Features.Triggers;
-using TriggerMail.Core.Contracts.Hooks;
-
-namespace TriggerMail.Service.Controllers;
+using TriggerMail.Core.Application.Payloads;
+using TriggerMail.Core.Application.Ports.Email;
 
 [ApiController]
-[Route("hooks")]
+[Route("api/hooks/email")]
 public sealed class HookController : ControllerBase
 {
-    private readonly IFireEmailTrigger _useCase;
+    private readonly IEmailTriggerPort _fire;
 
-    public HookController(IFireEmailTrigger useCase) => _useCase = useCase;
+    public HookController(IEmailTriggerPort fire) => _fire = fire;
 
     [HttpPost("{alias}")]
-    public async Task<IActionResult> FireAsync([FromRoute] string alias, [FromBody] FireTriggerRequest req)
+    public async Task<IActionResult> FireByAlias(
+        [FromRoute] string alias,
+        [FromBody] FireEmailHookRequest body,
+        CancellationToken ct)
     {
-        Request.EnableBuffering();
-        using var reader = new StreamReader(Request.Body, Encoding.UTF8, leaveOpen: true);
-        var rawBody = await reader.ReadToEndAsync();
-        Request.Body.Position = 0;
+        var req = new FireEmailRequest(
+            TriggerAlias: alias,
+            Recipients: body.Recipients,
+            Payload: body.Payload,
+            Subject: body.Subject
+        );
 
-        var signature = Request.Headers["X-Signature"].FirstOrDefault();
+        await _fire.FireAsync(req, ct);
 
-        var result = await _useCase.ExecuteAsync(alias, rawBody, signature, req.Payload);
-        if (result.IsSuccess)
-            return Ok(new { queued = true, messageId = result.Value });
-
-        var err = result.Error!;
-        return Problem(err.Message, statusCode: err.StatusCode ?? 400, title: err.Code);
+        return Accepted(new
+        {
+            alias,
+            overriddenRecipients = body.Recipients?.Length ?? 0,
+            hasPayload = body.Payload is not null
+        });
     }
 }

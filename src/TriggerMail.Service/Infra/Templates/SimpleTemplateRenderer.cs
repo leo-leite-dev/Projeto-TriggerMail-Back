@@ -3,15 +3,13 @@ using System.Text.RegularExpressions;
 using TriggerMail.Core.Application.Ports.Email;
 using TriggerMail.Core.Application.Ports.Persistence;
 
-namespace TriggerMail.Service.Infra.Templates;
-
 public sealed class SimpleTemplateRenderer : ITemplateRenderer
 {
     private readonly ITemplateRepository _templates;
 
     public SimpleTemplateRenderer(ITemplateRepository templates) => _templates = templates;
 
-    public async Task<(string subject, string html, string? text)> RenderAsync(string templateKey, string lang, object model, CancellationToken ct)
+    public async Task<(string subject, string html, string? text)> RenderAsync(string templateKey, string lang, IDictionary<string, object?> model, CancellationToken ct = default)
     {
         var template = await _templates.GetActiveByKeyAsync(templateKey, null, ct)
             ?? throw new InvalidOperationException("Template não encontrado/ativo.");
@@ -30,7 +28,7 @@ public sealed class SimpleTemplateRenderer : ITemplateRenderer
         return (Render(template.Subject), Render(template.Html), Render(template.Text ?? ""));
     }
 
-    private static Dictionary<string, string?> ToFlatDict(object model)
+    private static Dictionary<string, string?> ToFlatDict(IDictionary<string, object?> model)
     {
         var json = JsonSerializer.Serialize(model);
         using var doc = JsonDocument.Parse(json);

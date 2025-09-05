@@ -1,65 +1,176 @@
+using System.Text.Json;
 using TriggerMail.Core.Application.Abstractions.Result;
 using TriggerMail.Core.Application.Ports.Email;
-using TriggerMail.Core.Application.Ports.Messaging;
 using TriggerMail.Core.Application.Ports.Persistence;
-using TriggerMail.Core.Application.Ports.Security;
-using TriggerMail.Core.Contracts.Queue;
 
 namespace TriggerMail.Core.Application.Features.Triggers;
 
 public sealed class FireEmailTriggerImpl : IFireEmailTrigger
 {
     private readonly ITriggerRepository _triggers;
-    private readonly ITemplateRepository _templates;
-    private readonly ISignatureVerifier _auth;
+    private readonly IEmailProvider _email;
     private readonly ITemplateRenderer _renderer;
-    private readonly IQueuePublisher _queue;
 
     public FireEmailTriggerImpl(
         ITriggerRepository triggers,
-        ITemplateRepository templates,
-        ISignatureVerifier auth,
-        ITemplateRenderer renderer,
-        IQueuePublisher queue)
+        IEmailProvider email,
+        ITemplateRenderer renderer)
     {
         _triggers = triggers;
-        _templates = templates;
-        _auth = auth;
+        _email = email;
         _renderer = renderer;
-        _queue = queue;
     }
 
-    public async Task<Result<Guid>> ExecuteAsync(string alias, string rawBody, string? signatureHeader, object? payload)
+    public async Task<Result<Guid>> ExecuteAsync(
+        string alias,
+        string rawBody,
+        string? signatureHeader,
+        object? payload,
+        CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(alias))
-            return Result<Guid>.BadRequest("Alias é obrigatório.");
+        // 1) Carrega trigger
+        var trig = await _triggers.GetByAliasAsync(alias, ct);
+        if (trig is null || !trig.Enabled)
+            return Result<Guid>.Failure($"Trigger '{alias}' inexistente ou desabilitado.");
 
-        var trigger = await _triggers.GetByAliasAsync(alias, CancellationToken.None);
-        if (trigger is null || !trigger.Enabled)
-            return Result<Guid>.NotFound("Trigger não encontrado ou desabilitado.");
-
-        var authOk = await _auth.IsValidAsync(trigger, rawBody, signatureHeader, CancellationToken.None);
-        if (!authOk)
-            return Result<Guid>.Unauthorized("Assinatura inválida.");
-
-        var template = await _templates.GetActiveByKeyAsync(trigger.TemplateKey, version: null, CancellationToken.None);
-        if (template is null || !template.IsActive)
-            return Result<Guid>.NotFound("Template não encontrado/ativo.");
-
-        var model = payload ?? new { };
-
-        // var preview = await _renderer.RenderAsync(template.Key, trigger.Lang, model, CancellationToken.None);
-
-        var job = new EmailJob
+        // 2) Recipients: override via payload -> fallback defaultRecipients
+        var recipients = ExtractRecipientsFromPayload(payload);
+        if (recipients.Length == 0)
         {
-            MessageId = Guid.NewGuid(),
-            TemplateKey = template.Key,
-            Lang = trigger.Lang,
-            Model = model,
-            DefaultRecipients = trigger.DefaultRecipients
-        };
+            recipients = (trig.DefaultRecipients ?? Array.Empty<string>())
+                .Where(r => !string.IsNullOrWhiteSpace(r))
+                .Select(r => r.Trim())
+                .Distinct()
+                .ToArray();
+        }
+        if (recipients.Length == 0)
+            return Result<Guid>.BadRequest("Nenhum destinatário informado e o trigger não possui defaultRecipients.");
 
-        await _queue.PublishAsync(job, CancellationToken.None);
-        return Result<Guid>.Ok(job.MessageId);
+        // 3) Model para template (payload inteiro, exceto recipients)
+        var model = ExtractModel(payload);
+
+        // 4) Render template -> (subject, html, text)
+        var (tplSubject, tplHtml, tplText) = await _renderer.RenderAsync(
+            templateKey: trig.TemplateKey,
+            lang: trig.Lang,
+            model: model,
+            ct: ct
+        );
+
+        // 5) Subject final (template > fallback simples)
+        var subject = string.IsNullOrWhiteSpace(tplSubject)
+            ? $"[{trig.Alias}] Notificação"
+            : tplSubject!;
+
+        // 6) Envia
+        var send = await _email.SendAsync(recipients, subject, tplHtml, tplText, ct);
+        if (!send.ok)
+            return Result<Guid>.Failure($"Falha ao enviar e-mail: {send.providerMessageId}");
+
+        // 7) Retorna id rastreável
+        if (Guid.TryParse(send.providerMessageId, out var id))
+            return Result<Guid>.Ok(id);
+
+        return Result<Guid>.Ok(Guid.NewGuid());
     }
+
+    // ===== Helpers =====
+    private static string[] ExtractRecipientsFromPayload(object? payload)
+    {
+        try
+        {
+            if (payload is null) return Array.Empty<string>();
+
+            if (payload is IDictionary<string, object?> dict &&
+                dict.TryGetValue("recipients", out var rec))
+                return NormalizeRecipients(rec);
+
+            if (payload is string json)
+            {
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("recipients", out var node))
+                    return NormalizeRecipients(node);
+            }
+        }
+        catch { /* ignora parsing errors */ }
+
+        return Array.Empty<string>();
+    }
+
+    private static Dictionary<string, object?> ExtractModel(object? payload)
+    {
+        var model = new Dictionary<string, object?>();
+
+        if (payload is IDictionary<string, object?> dict)
+        {
+            foreach (var kv in dict)
+                if (!string.Equals(kv.Key, "recipients", StringComparison.OrdinalIgnoreCase))
+                    model[kv.Key] = kv.Value;
+            return model;
+        }
+
+        if (payload is string json)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                foreach (var prop in doc.RootElement.EnumerateObject())
+                {
+                    if (string.Equals(prop.Name, "recipients", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    model[prop.Name] = JsonElementToObject(prop.Value);
+                }
+            }
+            catch { /* ignore */ }
+        }
+
+        return model;
+    }
+
+    private static string[] NormalizeRecipients(object? value)
+    {
+        if (value is null) return Array.Empty<string>();
+
+        if (value is IEnumerable<string> arr)
+            return arr.Where(NotEmpty).Select(Trim).Distinct().ToArray();
+
+        if (value is string s)
+        {
+            var parts = s.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return parts.Where(NotEmpty).Select(Trim).Distinct().ToArray();
+        }
+
+        if (value is JsonElement el)
+        {
+            if (el.ValueKind == JsonValueKind.Array)
+            {
+                var list = new List<string>();
+                foreach (var item in el.EnumerateArray())
+                    if (item.ValueKind == JsonValueKind.String)
+                        list.Add(item.GetString()!);
+                return list.Where(NotEmpty).Select(Trim).Distinct().ToArray();
+            }
+            if (el.ValueKind == JsonValueKind.String)
+                return NormalizeRecipients(el.GetString());
+        }
+
+        return Array.Empty<string>();
+
+        static bool NotEmpty(string s) => !string.IsNullOrWhiteSpace(s);
+        static string Trim(string s) => s.Trim();
+    }
+
+    private static object? JsonElementToObject(JsonElement el) =>
+        el.ValueKind switch
+        {
+            JsonValueKind.Null => (object?)null,
+            JsonValueKind.String => el.GetString(),
+            JsonValueKind.Number => el.TryGetInt64(out var i64) ? i64 :
+                                    el.TryGetDouble(out var dbl) ? dbl : el.GetRawText(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Object => JsonSerializer.Deserialize<Dictionary<string, object?>>(el.GetRawText()),
+            JsonValueKind.Array => JsonSerializer.Deserialize<List<object?>>(el.GetRawText()),
+            _ => el.GetRawText()
+        };
 }
