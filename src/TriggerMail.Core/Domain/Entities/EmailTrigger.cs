@@ -46,22 +46,4 @@ public sealed class EmailTrigger : Entity
             Enabled = enabled
         };
     }
-
-    public void Update(
-        string? templateKey = null,
-        string? lang = null,
-        string? authType = null,
-        string? authSecret = null,
-        string[]? defaultRecipients = null,
-        string? mappingConfigJson = null,
-        bool? enabled = null)
-    {
-        if (!string.IsNullOrWhiteSpace(templateKey)) TemplateKey = templateKey.Trim();
-        if (!string.IsNullOrWhiteSpace(lang)) Lang = lang.Trim();
-        if (!string.IsNullOrWhiteSpace(authType)) AuthType = authType.Trim().ToLowerInvariant();
-        if (authSecret is not null) AuthSecret = authSecret;
-        if (defaultRecipients is not null) DefaultRecipients = defaultRecipients;
-        if (mappingConfigJson is not null) MappingConfigJson = mappingConfigJson;
-        if (enabled.HasValue) Enabled = enabled.Value;
-    }
 }

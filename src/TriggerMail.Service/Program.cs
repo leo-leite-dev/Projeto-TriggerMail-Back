@@ -1,20 +1,15 @@
 using Prometheus;
-using System.Threading.Channels;
 using System.Threading.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using TriggerMail.Core.Application.Ports.Email;
-using TriggerMail.Core.Application.Ports.Messaging;
 using TriggerMail.Core.Application.Ports.Persistence;
 using TriggerMail.Core.Application.Ports.Security;
 using TriggerMail.Core.Domain.Entities;
 using TriggerMail.Service.Infra.Email;
-using TriggerMail.Service.Infra.Health;
 using TriggerMail.Service.Infra.Idempotency;
 using TriggerMail.Service.Infra.Persistence;
 using TriggerMail.Service.Infra.Persistence.Repositories;
-using TriggerMail.Service.Infra.Queue;
 using TriggerMail.Service.Infra.Security;
-using TriggerMail.Service.Workers;
 using UseCaseIFireEmailTrigger = TriggerMail.Core.Application.Features.Triggers.IFireEmailTrigger;
 using TriggerMail.Core.Application.Features.Triggers; 
 
@@ -30,7 +25,6 @@ builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseNpgsql(cs);
 });
 
-// ===== Use case (Features.Triggers) + Porta (adapter) =====
 builder.Services.AddScoped<UseCaseIFireEmailTrigger, FireEmailTriggerImpl>();
 builder.Services.AddScoped<IEmailTriggerPort, FireEmailTriggerPortAdapter>(); // HookController injeta esta porta
 builder.Services.AddScoped<ITriggerRepository, EfTriggerRepository>();
@@ -41,16 +35,7 @@ builder.Services.AddSingleton<ISignatureVerifier, SignatureVerifier>();
 
 builder.Services.AddScoped<ITemplateRenderer, SimpleTemplateRenderer>();
 
-var channel = Channel.CreateUnbounded<TriggerMail.Core.Contracts.Queue.EmailJob>();
-builder.Services.AddSingleton(channel);
-builder.Services.AddSingleton<IQueuePublisher, InMemoryQueue>();
-builder.Services.AddSingleton<IQueueConsumer, InMemoryQueueConsumer>();
-
 builder.Services.AddScoped<IEmailProvider, SmtpEmailProvider>();
-
-builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry"));
-
-builder.Services.AddHostedService<EmailWorker>();
 
 builder.Services.AddSingleton<IIdempotencyStore, InMemoryIdempotencyStore>();
 
@@ -76,10 +61,6 @@ builder.Services.AddRateLimiter(opts =>
     });
 });
 
-builder.Services.AddHealthChecks()
-    .AddNpgSql(builder.Configuration.GetConnectionString("TriggerMail")!, name: "postgres")
-    .AddCheck<SmtpHealthCheck>("smtp");
-
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -94,8 +75,6 @@ app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { ok = true, service = "TriggerMail" }));
 app.MapControllers().RequireRateLimiting("per-alias");
-app.MapHealthChecks("/health/live");
-app.MapHealthChecks("/health/ready");
 app.MapMetrics();
 
 await EnsureDatabase(app.Services);

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using TriggerMail.Core.Application.Payloads;
 using TriggerMail.Core.Application.Ports.Email;
+using TriggerMail.Core.Contracts.Hooks;
 
 [ApiController]
 [Route("api/hooks/email")]

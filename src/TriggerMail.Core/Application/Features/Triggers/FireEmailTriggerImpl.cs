@@ -28,12 +28,10 @@ public sealed class FireEmailTriggerImpl : IFireEmailTrigger
         object? payload,
         CancellationToken ct = default)
     {
-        // 1) Carrega trigger
         var trig = await _triggers.GetByAliasAsync(alias, ct);
         if (trig is null || !trig.Enabled)
             return Result<Guid>.Failure($"Trigger '{alias}' inexistente ou desabilitado.");
 
-        // 2) Recipients: override via payload -> fallback defaultRecipients
         var recipients = ExtractRecipientsFromPayload(payload);
         if (recipients.Length == 0)
         {
@@ -46,10 +44,8 @@ public sealed class FireEmailTriggerImpl : IFireEmailTrigger
         if (recipients.Length == 0)
             return Result<Guid>.BadRequest("Nenhum destinatário informado e o trigger não possui defaultRecipients.");
 
-        // 3) Model para template (payload inteiro, exceto recipients)
         var model = ExtractModel(payload);
 
-        // 4) Render template -> (subject, html, text)
         var (tplSubject, tplHtml, tplText) = await _renderer.RenderAsync(
             templateKey: trig.TemplateKey,
             lang: trig.Lang,
@@ -57,42 +53,35 @@ public sealed class FireEmailTriggerImpl : IFireEmailTrigger
             ct: ct
         );
 
-        // 5) Subject final (template > fallback simples)
         var subject = string.IsNullOrWhiteSpace(tplSubject)
             ? $"[{trig.Alias}] Notificação"
             : tplSubject!;
 
-        // 6) Envia
         var send = await _email.SendAsync(recipients, subject, tplHtml, tplText, ct);
         if (!send.ok)
             return Result<Guid>.Failure($"Falha ao enviar e-mail: {send.providerMessageId}");
 
-        // 7) Retorna id rastreável
         if (Guid.TryParse(send.providerMessageId, out var id))
             return Result<Guid>.Ok(id);
 
         return Result<Guid>.Ok(Guid.NewGuid());
     }
 
-    // ===== Helpers =====
     private static string[] ExtractRecipientsFromPayload(object? payload)
     {
-        try
+        if (payload is null)
+            return Array.Empty<string>();
+
+        if (payload is IDictionary<string, object?> dict &&
+            dict.TryGetValue("recipients", out var rec))
+            return NormalizeRecipients(rec);
+
+        if (payload is string json)
         {
-            if (payload is null) return Array.Empty<string>();
-
-            if (payload is IDictionary<string, object?> dict &&
-                dict.TryGetValue("recipients", out var rec))
-                return NormalizeRecipients(rec);
-
-            if (payload is string json)
-            {
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("recipients", out var node))
-                    return NormalizeRecipients(node);
-            }
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("recipients", out var node))
+                return NormalizeRecipients(node);
         }
-        catch { /* ignora parsing errors */ }
 
         return Array.Empty<string>();
     }
@@ -111,17 +100,13 @@ public sealed class FireEmailTriggerImpl : IFireEmailTrigger
 
         if (payload is string json)
         {
-            try
+            using var doc = JsonDocument.Parse(json);
+            foreach (var prop in doc.RootElement.EnumerateObject())
             {
-                using var doc = JsonDocument.Parse(json);
-                foreach (var prop in doc.RootElement.EnumerateObject())
-                {
-                    if (string.Equals(prop.Name, "recipients", StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    model[prop.Name] = JsonElementToObject(prop.Value);
-                }
+                if (string.Equals(prop.Name, "recipients", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                model[prop.Name] = JsonElementToObject(prop.Value);
             }
-            catch { /* ignore */ }
         }
 
         return model;
